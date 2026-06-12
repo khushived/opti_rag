@@ -7,7 +7,7 @@ Uses pydantic-settings for type-safe configuration with validation.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -70,6 +70,18 @@ class Settings(BaseSettings):
             "context. If the context does not contain enough information, say so clearly."
         )
     )
+
+    @field_validator("redis_url", mode="before")
+    @classmethod
+    def validate_redis_url(cls, v: Any) -> str:
+        if not v or not isinstance(v, str):
+            return "redis://localhost:6379/0"
+        v = v.strip().strip("\"'")
+        if not (v.startswith("redis://") or v.startswith("rediss://") or v.startswith("unix://")):
+            if not v:
+                return "redis://localhost:6379/0"
+            return f"redis://{v}"
+        return v
 
     @field_validator("chroma_persist_dir", "upload_dir", mode="after")
     @classmethod
