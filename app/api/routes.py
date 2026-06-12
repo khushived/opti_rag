@@ -80,7 +80,8 @@ async def health_check(request: Request):
         await redis_client.aclose()
         services["redis"] = "ok"
     except Exception as exc:
-        services["redis"] = f"error: {exc}"
+        safe_url = settings.redis_url.split("@")[-1] if "@" in settings.redis_url else settings.redis_url
+        services["redis"] = f"error (url: {safe_url}): {exc}"
 
     # Ollama
     try:
