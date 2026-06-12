@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OptiRAG — Intelligent Document AI</title>
+  <meta name="description" content="Multi-modal RAG system with semantic caching. Ask questions, save cost, slash latency." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Tokens ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #060a12;
+      --bg-s:      #0b1120;
+      --bg-e:      #111828;
+      --bg-c:      #18213a;
+      --border:    rgba(99,120,200,0.14);
+      --bgl:       rgba(139,92,246,0.35);
+      --purple:    #8b5cf6;
+      --purple-l:  #a78bfa;
+      --blue:      #3b82f6;
+      --cyan:      #06b6d4;
+      --green:     #10b981;
+      --amber:     #f59e0b;
+      --red:       #ef4444;
+      --t1: #f1f5f9; --t2: #94a3b8; --t3: #475569;
+      --gp: linear-gradient(135deg,#8b5cf6,#3b82f6);
+      --gg: linear-gradient(135deg,#10b981,#06b6d4);
+      --ga: linear-gradient(135deg,#f59e0b,#ef4444);
+      --r1:8px; --r2:12px; --r3:18px; --r4:24px;
+    }
+    html, body { height:100%; overflow:hidden; }
+    body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--t1); display:flex; flex-direction:column; }
+    ::-webkit-scrollbar { width:4px; } ::-webkit-scrollbar-thumb { background:var(--bg-c); border-radius:99px; }
+
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    .app { display:flex; height:100vh; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────────── */
+    .sidebar { width:268px; min-width:268px; background:var(--bg-s); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+    .sb-head { padding:18px 16px 14px; border-bottom:1px solid var(--border); }
+    .logo { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+    .logo-icon { width:36px; height:36px; background:var(--gp); border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:19px; box-shadow:0 0 20px rgba(139,92,246,0.45); }
+    .logo-text { font-size:16px; font-weight:800; letter-spacing:-.4px; }
+    .logo-sub { font-size:10px; color:var(--t3); margin-top:1px; letter-spacing:.3px; }
+    .upload-btn { width:100%; padding:10px; background:var(--gp); border:none; border-radius:var(--r2); color:#fff; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:7px; transition:opacity .2s,transform .15s; position:relative; overflow:hidden; }
+    .upload-btn:hover { opacity:.88; } .upload-btn:active { transform:scale(.97); }
+    #fileInput { display:none; }
+    .sb-sect { padding:12px 16px 4px; font-size:10px; font-weight:700; letter-spacing:1.4px; color:var(--t3); text-transform:uppercase; }
+    .doc-list { flex:1; overflow-y:auto; padding:4px 8px 8px; }
+    .doc-item { display:flex; align-items:center; gap:9px; padding:8px 9px; border-radius:var(--r1); cursor:pointer; transition:background .15s; }
+    .doc-item:hover { background:var(--bg-e); }
+    .doc-icon { width:30px; height:30px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:14px; flex-shrink:0; }
+    .doc-icon.pdf  { background:rgba(239,68,68,.15); }
+    .doc-icon.img  { background:rgba(59,130,246,.15); }
+    .doc-icon.txt  { background:rgba(16,185,129,.15); }
+    .doc-icon.docx { background:rgba(245,158,11,.15); }
+    .doc-info { flex:1; min-width:0; }
+    .doc-name { font-size:11px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .doc-meta { font-size:10px; color:var(--t3); margin-top:2px; }
+    .no-docs { text-align:center; padding:28px 14px; color:var(--t3); font-size:12px; }
+    .no-docs-icon { font-size:28px; margin-bottom:7px; }
+    .ingest-progress { margin-top:10px; display:none; }
+    .ingest-progress.show { display:block; }
+    .prog-track { height:3px; background:var(--bg-e); border-radius:99px; overflow:hidden; }
+    .prog-fill { height:100%; width:0%; background:var(--gp); border-radius:99px; transition:width .4s ease; }
+    .prog-lbl { font-size:10px; color:var(--t3); margin-top:5px; }
+
+    /* ── Status bar ───────────────────────────────────────────────────────── */
+    .sb-status { padding:10px 14px; border-top:1px solid var(--border); background:var(--bg); display:flex; flex-direction:column; gap:5px; }
+    .status-row { display:flex; align-items:center; justify-content:space-between; font-size:10px; }
+    .status-dot { width:6px; height:6px; border-radius:50%; display:inline-block; margin-right:5px; }
+    .dot-ok { background:var(--green); animation:blink 2.5s ease-in-out infinite; }
+    .dot-err { background:var(--red); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .status-val { font-weight:600; }
+    .status-ok  { color:var(--green); }
+    .status-err { color:var(--red); }
+
+    /* ── Main ────────────────────────────────────────────────────────────── */
+    .main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+    /* ── Topbar ───────────────────────────────────────────────────────────── */
+    .topbar { padding:12px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; background:var(--bg-s); flex-shrink:0; }
+    .tb-left { display:flex; align-items:center; gap:14px; }
+    .tb-title { font-size:14px; font-weight:700; }
+    .tb-sub { font-size:11px; color:var(--t3); }
+    .model-pill { display:flex; align-items:center; gap:5px; background:var(--bg-e); border:1px solid var(--border); border-radius:99px; padding:5px 11px; font-size:11px; font-weight:500; color:var(--t2); }
+    .tb-right { display:flex; align-items:center; gap:8px; }
+    .stat-chip { display:flex; align-items:center; gap:5px; padding:5px 11px; border-radius:99px; border:1px solid var(--border); background:var(--bg-e); font-size:11px; font-weight:600; cursor:pointer; transition:border-color .2s; }
+    .stat-chip:hover { border-color:var(--purple); }
+    .chip-val { color:var(--purple-l); }
+    .tab-btn { padding:5px 13px; border-radius:99px; border:1px solid var(--border); background:transparent; color:var(--t2); font-size:11px; font-weight:500; cursor:pointer; transition:all .2s; }
+    .tab-btn.active { background:var(--gp); border-color:transparent; color:#fff; }
+    .tab-btn:hover:not(.active) { border-color:var(--purple); color:var(--purple-l); }
+
+    /* ── Content ─────────────────────────────────────────────────────────── */
+    .content { flex:1; overflow:hidden; position:relative; }
+    .tab-panel { display:none; height:100%; }
+    .tab-panel.active { display:flex; flex-direction:column; }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       CHAT PANEL
+    ═══════════════════════════════════════════════════════════════════════ */
+    .chat-msgs { flex:1; overflow-y:auto; padding:22px; display:flex; flex-direction:column; gap:18px; }
+    .empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:36px; gap:14px; }
+    .es-icon { width:72px; height:72px; background:linear-gradient(135deg,rgba(139,92,246,.18),rgba(59,130,246,.18)); border:1px solid var(--bgl); border-radius:22px; display:flex; align-items:center; justify-content:center; font-size:30px; box-shadow:0 0 30px rgba(139,92,246,.15); }
+    .es-icon { animation:float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+    .empty-state h2 { font-size:19px; font-weight:700; }
+    .empty-state p { color:var(--t2); font-size:13px; max-width:360px; line-height:1.65; }
+    .suggestions { display:flex; flex-wrap:wrap; gap:7px; justify-content:center; margin-top:6px; }
+    .suggestion { padding:7px 13px; border-radius:99px; border:1px solid var(--border); background:var(--bg-e); font-size:12px; cursor:pointer; color:var(--t2); transition:all .2s; }
+    .suggestion:hover { border-color:var(--purple); color:var(--purple-l); background:rgba(139,92,246,.08); }
+
+    /* Messages */
+    .msg { display:flex; gap:11px; max-width:840px; }
+    .msg.user { flex-direction:row-reverse; align-self:flex-end; }
+    .msg.ai   { align-self:flex-start; }
+    .msg-av { width:32px; height:32px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; margin-top:2px; }
+    .msg.user .msg-av { background:var(--gp); }
+    .msg.ai .msg-av   { background:var(--bg-c); border:1px solid var(--border); }
+    .msg-body { max-width:660px; }
+    .msg-bubble { border-radius:var(--r3); padding:13px 17px; line-height:1.7; font-size:13.5px; }
+    .msg.user .msg-bubble { background:var(--gp); border-bottom-right-radius:4px; color:#fff; }
+    .msg.ai   .msg-bubble { background:var(--bg-c); border:1px solid var(--border); border-bottom-left-radius:4px; white-space:pre-wrap; }
+    .msg-meta { display:flex; align-items:center; gap:7px; margin-top:9px; flex-wrap:wrap; }
+    .badge { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:700; padding:3px 8px; border-radius:99px; }
+    .b-cache  { background:rgba(16,185,129,.15); color:var(--green); }
+    .b-llm    { background:rgba(139,92,246,.15); color:var(--purple-l); }
+    .b-lat    { background:rgba(245,158,11,.12); color:var(--amber); }
+    .b-src    { background:rgba(99,120,180,.12); color:var(--t2); }
+    .b-demo   { background:rgba(6,182,212,.12); color:var(--cyan); }
+    .sources-block { margin-top:9px; padding:9px 11px; background:var(--bg-e); border-radius:var(--r1); border:1px solid var(--border); }
+    .src-lbl { font-size:10px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.8px; margin-bottom:5px; }
+    .src-tag { display:inline-flex; align-items:center; gap:3px; font-size:11px; color:var(--t2); background:var(--bg-s); border:1px solid var(--border); border-radius:5px; padding:2px 7px; margin:2px 3px 2px 0; }
+    .typing { display:flex; gap:5px; align-items:center; padding:4px 0; }
+    .typing-dot { width:7px; height:7px; border-radius:50%; background:var(--purple-l); animation:tdot 1.2s ease-in-out infinite; }
+    .typing-dot:nth-child(2){animation-delay:.2s} .typing-dot:nth-child(3){animation-delay:.4s}
+    @keyframes tdot { 0%,60%,100%{opacity:.2;transform:translateY(0)} 30%{opacity:1;transform:translateY(-4px)} }
+
+    /* Input */
+    .chat-input-area { padding:14px 22px 18px; border-top:1px solid var(--border); background:var(--bg-s); }
+    .input-wrap { display:flex; gap:9px; align-items:flex-end; background:var(--bg); border:1px solid var(--border); border-radius:var(--r3); padding:11px 13px; transition:border-color .2s,box-shadow .2s; }
+    .input-wrap:focus-within { border-color:var(--purple); box-shadow:0 0 0 3px rgba(139,92,246,.1); }
+    #chatInput { flex:1; background:transparent; border:none; outline:none; color:var(--t1); font-size:13.5px; font-family:'Inter',sans-serif; resize:none; min-height:22px; max-height:120px; line-height:1.5; }
+    #chatInput::placeholder { color:var(--t3); }
+    .send-btn { width:34px; height:34px; border-radius:9px; background:var(--gp); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; transition:opacity .2s,transform .15s; flex-shrink:0; }
+    .send-btn:hover{opacity:.85} .send-btn:active{transform:scale(.92)} .send-btn:disabled{opacity:.4;cursor:not-allowed}
+    .input-hint { text-align:center; font-size:10.5px; color:var(--t3); margin-top:7px; }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       ANALYTICS PANEL
+    ═══════════════════════════════════════════════════════════════════════ */
+    #panel-analytics { overflow-y:auto; padding:22px; gap:18px; flex-direction:column; }
+    .an-hdr { margin-bottom:2px; }
+    .an-hdr h2 { font-size:17px; font-weight:800; }
+    .an-hdr p { color:var(--t2); font-size:12.5px; margin-top:3px; }
+
+    /* KPI cards */
+    .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+    .kpi-card { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:16px 18px; position:relative; overflow:hidden; transition:border-color .2s,transform .2s; }
+    .kpi-card:hover { border-color:rgba(139,92,246,.35); transform:translateY(-2px); }
+    .kpi-card::before { content:''; position:absolute; top:0;left:0;right:0; height:2px; }
+    .kpi-card.pur::before { background:var(--gp); }
+    .kpi-card.grn::before { background:var(--gg); }
+    .kpi-card.amb::before { background:var(--ga); }
+    .kpi-card.cyn::before { background:linear-gradient(90deg,var(--cyan),var(--blue)); }
+    .kpi-lbl { font-size:10px; color:var(--t3); font-weight:700; text-transform:uppercase; letter-spacing:.8px; }
+    .kpi-val { font-size:30px; font-weight:800; margin:7px 0 3px; letter-spacing:-1px; }
+    .kpi-val.grn { color:var(--green); } .kpi-val.pur { color:var(--purple-l); }
+    .kpi-val.amb { color:var(--amber); } .kpi-val.cyn { color:var(--cyan); }
+    .kpi-sub { font-size:11px; color:var(--t3); }
+    .kpi-icon { position:absolute; top:14px;right:14px; font-size:20px; opacity:.25; }
+
+    /* Charts */
+    .charts-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .chart-card { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:18px; }
+    .chart-title { font-size:13px; font-weight:700; margin-bottom:3px; }
+    .chart-sub { font-size:11px; color:var(--t3); margin-bottom:14px; }
+
+    /* Donut */
+    .donut-wrap { display:flex; align-items:center; gap:22px; }
+    .donut-legend { display:flex; flex-direction:column; gap:9px; }
+    .leg-item { display:flex; align-items:center; gap:7px; font-size:12px; }
+    .leg-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .leg-val { font-weight:700; margin-left:auto; padding-left:10px; }
+
+    /* Bar */
+    .bar-chart { display:flex; flex-direction:column; gap:13px; }
+    .bar-row { display:flex; flex-direction:column; gap:4px; }
+    .bar-lbl { display:flex; justify-content:space-between; font-size:12px; }
+    .bar-lbl span:last-child { font-weight:700; color:var(--t1); }
+    .bar-track { height:9px; background:var(--bg-s); border-radius:99px; overflow:hidden; }
+    .bar-fill { height:100%; border-radius:99px; transition:width 1.2s cubic-bezier(.4,0,.2,1); }
+    .speedup-box { margin-top:18px; padding:13px; background:rgba(16,185,129,.07); border:1px solid rgba(16,185,129,.18); border-radius:var(--r2); text-align:center; }
+    .speedup-box .label { font-size:10px; color:var(--t3); margin-bottom:3px; text-transform:uppercase; letter-spacing:.8px; }
+    .speedup-box .big { font-size:27px; font-weight:800; color:var(--green); }
+    .speedup-box .sub { font-size:11px; color:var(--t2); margin-top:2px; }
+
+    /* History table */
+    .hist-card { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:18px; overflow:hidden; }
+    .hist-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+    .hist-table th { text-align:left; padding:7px 11px; font-size:10px; font-weight:700; letter-spacing:.8px; color:var(--t3); text-transform:uppercase; border-bottom:1px solid var(--border); }
+    .hist-table td { padding:9px 11px; border-bottom:1px solid rgba(99,120,180,.07); color:var(--t2); vertical-align:middle; }
+    .hist-table tr:last-child td { border-bottom:none; }
+    .hist-table tr:hover td { background:rgba(139,92,246,.04); color:var(--t1); }
+    .q-text { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pill-hit  { background:rgba(16,185,129,.15); color:var(--green); font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px; }
+    .pill-miss { background:rgba(139,92,246,.15); color:var(--purple-l); font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px; }
+    .pill-demo { background:rgba(6,182,212,.15); color:var(--cyan); font-size:10px; font-weight:700; padding:2px 8px; border-radius:99px; }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       COMPARISON PANEL
+    ═══════════════════════════════════════════════════════════════════════ */
+    #panel-compare { overflow-y:auto; padding:22px; flex-direction:column; gap:20px; }
+
+    /* Hero */
+    .compare-hero { background:linear-gradient(135deg,rgba(139,92,246,.1),rgba(59,130,246,.08)); border:1px solid rgba(139,92,246,.25); border-radius:var(--r4); padding:28px 32px; text-align:center; position:relative; overflow:hidden; }
+    .compare-hero::before { content:''; position:absolute; top:-60px;right:-60px; width:200px; height:200px; background:radial-gradient(circle,rgba(139,92,246,.12),transparent 70%); }
+    .compare-hero h2 { font-size:22px; font-weight:800; margin-bottom:8px; }
+    .compare-hero p { color:var(--t2); font-size:13.5px; max-width:600px; margin:0 auto; line-height:1.7; }
+
+    /* Side-by-side comparison */
+    .vs-grid { display:grid; grid-template-columns:1fr auto 1fr; gap:0; align-items:stretch; }
+    .vs-col { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:22px; }
+    .vs-col.old { border-color:rgba(239,68,68,.3); }
+    .vs-col.new { border-color:rgba(16,185,129,.3); }
+    .vs-badge { display:inline-block; font-size:10px; font-weight:800; padding:3px 10px; border-radius:99px; margin-bottom:12px; text-transform:uppercase; letter-spacing:.8px; }
+    .vs-badge.old { background:rgba(239,68,68,.15); color:var(--red); }
+    .vs-badge.new { background:rgba(16,185,129,.15); color:var(--green); }
+    .vs-title { font-size:16px; font-weight:800; margin-bottom:6px; }
+    .vs-sub { font-size:12px; color:var(--t2); margin-bottom:18px; line-height:1.6; }
+    .vs-sep { display:flex; align-items:center; justify-content:center; padding:0 12px; }
+    .vs-sep-inner { width:36px; height:36px; border-radius:50%; background:var(--gp); display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800; color:#fff; flex-shrink:0; }
+    .flow-step { display:flex; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:var(--r2); margin-bottom:8px; border:1px solid var(--border); background:var(--bg-s); }
+    .flow-step.bad  { border-color:rgba(239,68,68,.2); background:rgba(239,68,68,.04); }
+    .flow-step.good { border-color:rgba(16,185,129,.2); background:rgba(16,185,129,.04); }
+    .flow-step.skip { border-color:rgba(6,182,212,.2); background:rgba(6,182,212,.04); opacity:.6; text-decoration:line-through; text-decoration-color:rgba(6,182,212,.5); }
+    .step-icon { font-size:18px; flex-shrink:0; margin-top:1px; }
+    .step-body { flex:1; }
+    .step-name { font-size:12.5px; font-weight:600; }
+    .step-detail { font-size:11px; color:var(--t2); margin-top:2px; }
+    .step-cost { font-size:11px; font-weight:700; margin-top:4px; }
+    .cost-bad  { color:var(--red); } .cost-good { color:var(--green); }
+
+    /* Cost table */
+    .cost-table-wrap { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:20px; }
+    .cost-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .cost-table th { text-align:left; padding:8px 12px; font-size:10px; font-weight:700; color:var(--t3); text-transform:uppercase; letter-spacing:.8px; border-bottom:1px solid var(--border); }
+    .cost-table td { padding:11px 12px; border-bottom:1px solid rgba(99,120,180,.07); vertical-align:middle; }
+    .cost-table tr:last-child td { border-bottom:none; font-weight:700; }
+    .cost-table tr:hover td { background:rgba(139,92,246,.03); }
+    .cost-num { font-family:'JetBrains Mono',monospace; font-weight:600; }
+    .cost-num.red { color:var(--red); } .cost-num.grn { color:var(--green); }
+
+    /* Live counters */
+    .live-counters { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .lc-card { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:16px 18px; text-align:center; position:relative; overflow:hidden; transition:transform .2s; }
+    .lc-card:hover { transform:translateY(-2px); }
+    .lc-card::after { content:''; position:absolute; bottom:0;left:0;right:0;height:2px; }
+    .lc-card.red::after { background:var(--ga); } .lc-card.grn::after { background:var(--gg); } .lc-card.pur::after { background:var(--gp); }
+    .lc-icon { font-size:22px; margin-bottom:7px; }
+    .lc-val { font-size:28px; font-weight:800; letter-spacing:-1px; }
+    .lc-val.red { color:var(--red); } .lc-val.grn { color:var(--green); } .lc-val.pur { color:var(--purple-l); }
+    .lc-lbl { font-size:11px; color:var(--t2); margin-top:3px; }
+    .lc-sub { font-size:10px; color:var(--t3); margin-top:2px; }
+
+    /* Pipeline viz */
+    .pipeline-section { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:22px; }
+    .pipe-title { font-size:14px; font-weight:700; margin-bottom:4px; }
+    .pipe-sub   { font-size:11.5px; color:var(--t2); margin-bottom:20px; }
+    .pipeline { display:flex; align-items:center; gap:0; overflow-x:auto; padding-bottom:6px; }
+    .pipe-node { flex-shrink:0; text-align:center; width:110px; }
+    .pipe-circle { width:52px; height:52px; border-radius:50%; margin:0 auto 8px; display:flex; align-items:center; justify-content:center; font-size:22px; border:2px solid transparent; position:relative; transition:all .3s; }
+    .pipe-circle.active { animation:pulse-ring 2s ease-in-out infinite; }
+    @keyframes pulse-ring { 0%,100%{box-shadow:0 0 0 0 rgba(139,92,246,0)} 50%{box-shadow:0 0 0 8px rgba(139,92,246,.15)} }
+    .pipe-circle.c-blue   { background:rgba(59,130,246,.15); border-color:rgba(59,130,246,.3); }
+    .pipe-circle.c-purple { background:rgba(139,92,246,.15); border-color:rgba(139,92,246,.3); }
+    .pipe-circle.c-green  { background:rgba(16,185,129,.15); border-color:rgba(16,185,129,.3); }
+    .pipe-circle.c-amber  { background:rgba(245,158,11,.15); border-color:rgba(245,158,11,.3); }
+    .pipe-circle.c-cyan   { background:rgba(6,182,212,.15); border-color:rgba(6,182,212,.3); }
+    .pipe-circle.c-red    { background:rgba(239,68,68,.15); border-color:rgba(239,68,68,.3); }
+    .pipe-lbl { font-size:11px; font-weight:600; }
+    .pipe-detail { font-size:10px; color:var(--t3); margin-top:2px; }
+    .pipe-arrow { font-size:18px; color:var(--t3); flex-shrink:0; padding:0 2px; }
+    .pipe-arrow.hit { color:var(--green); }
+
+    /* ── How it works  ─────────────────────────────────────────────────── */
+    #panel-howitworks { overflow-y:auto; padding:22px; flex-direction:column; gap:18px; }
+    .hiw-hero { background:linear-gradient(135deg,rgba(6,182,212,.08),rgba(59,130,246,.06)); border:1px solid rgba(6,182,212,.2); border-radius:var(--r4); padding:26px 30px; }
+    .hiw-hero h2 { font-size:20px; font-weight:800; margin-bottom:6px; }
+    .hiw-hero p { color:var(--t2); font-size:13px; line-height:1.8; max-width:760px; }
+    .hiw-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .hiw-card { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:18px; position:relative; overflow:hidden; }
+    .hiw-card::before { content:''; position:absolute; top:0;left:0;right:0;height:2px; }
+    .hiw-card.p1::before{background:var(--gp)} .hiw-card.p2::before{background:var(--gg)} .hiw-card.p3::before{background:var(--ga)} .hiw-card.p4::before{background:linear-gradient(90deg,var(--cyan),var(--blue))} .hiw-card.p5::before{background:linear-gradient(90deg,#a78bfa,var(--purple))} .hiw-card.p6::before{background:linear-gradient(90deg,#f59e0b,var(--green))}
+    .hiw-num { font-size:11px; font-weight:800; color:var(--t3); text-transform:uppercase; letter-spacing:1px; margin-bottom:8px; }
+    .hiw-icon { font-size:26px; margin-bottom:9px; }
+    .hiw-title { font-size:14px; font-weight:700; margin-bottom:5px; }
+    .hiw-desc { font-size:12px; color:var(--t2); line-height:1.7; }
+    .hiw-tech { margin-top:8px; }
+    .tech-tag { display:inline-block; font-size:10px; font-weight:600; font-family:'JetBrains Mono',monospace; padding:2px 7px; border-radius:5px; background:var(--bg-s); border:1px solid var(--border); color:var(--t3); margin:2px 2px 0 0; }
+    .def-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .def-card { background:var(--bg-e); border:1px solid var(--border); border-radius:var(--r3); padding:18px; }
+    .def-title { font-size:13px; font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+    .def-body { font-size:12px; color:var(--t2); line-height:1.75; }
+    .def-body strong { color:var(--t1); }
+
+    /* ── Toast ────────────────────────────────────────────────────────────── */
+    #toast { position:fixed; bottom:22px; right:22px; z-index:9999; background:var(--bg-c); border:1px solid var(--border); border-radius:var(--r2); padding:11px 16px; font-size:12.5px; font-weight:500; box-shadow:0 8px 30px rgba(0,0,0,.5); transform:translateY(80px); opacity:0; transition:all .3s cubic-bezier(.34,1.56,.64,1); display:flex; align-items:center; gap:9px; max-width:340px; }
+    #toast.show { transform:translateY(0); opacity:1; }
+    #toast.success { border-left:3px solid var(--green); }
+    #toast.error   { border-left:3px solid var(--red); }
+    #toast.info    { border-left:3px solid var(--purple); }
+
+    /* Drop overlay */
+    .drop-overlay { position:fixed; inset:0; z-index:1000; background:rgba(6,10,18,.88); display:none; align-items:center; justify-content:center; backdrop-filter:blur(5px); }
+    .drop-overlay.active { display:flex; }
+    .drop-box { border:2px dashed var(--purple); border-radius:var(--r4); padding:56px 76px; text-align:center; animation:pulse-b 1.5s ease-in-out infinite; }
+    @keyframes pulse-b { 0%,100%{border-color:var(--purple);box-shadow:0 0 30px rgba(139,92,246,.3)} 50%{border-color:var(--blue);box-shadow:0 0 50px rgba(59,130,246,.4)} }
+    .drop-box h2 { font-size:20px; margin-bottom:6px; } .drop-box p { color:var(--t2); font-size:13px; }
+
+    @media(max-width:1000px){.kpi-grid{grid-template-columns:repeat(2,1fr)}.charts-row,.hiw-grid,.def-grid,.vs-grid{grid-template-columns:1fr}.vs-sep{display:none}.live-counters{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+
+<!-- Drop overlay -->
+<div class="drop-overlay" id="dropOverlay">
+  <div class="drop-box">
+    <h2>📂 Drop your files here</h2>
+    <p>PDF, DOCX, TXT, PNG, JPG supported</p>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sb-head">
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div>
+          <div class="logo-text">OptiRAG</div>
+          <div class="logo-sub">Semantic Document AI</div>
+        </div>
+      </div>
+      <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+        <span>⬆</span> Upload Document
+      </button>
+      <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.docx" multiple />
+      <div class="ingest-progress" id="ingestProg">
+        <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+        <div class="prog-lbl" id="progLbl">Indexing…</div>
+      </div>
+    </div>
+
+    <div class="sb-sect">Documents</div>
+    <div class="doc-list" id="docList">
+      <div class="no-docs" id="noDocs">
+        <div class="no-docs-icon">📂</div>
+        <div>No documents yet.<br>Upload a file to begin.</div>
+      </div>
+    </div>
+
+    <!-- Service status -->
+    <div class="sb-status">
+      <div class="status-row">
+        <span><span class="status-dot dot-ok" id="d-redis"></span>Redis</span>
+        <span class="status-val status-ok" id="s-redis">—</span>
+      </div>
+      <div class="status-row">
+        <span><span class="status-dot dot-ok" id="d-chromadb"></span>ChromaDB</span>
+        <span class="status-val status-ok" id="s-chroma">— docs</span>
+      </div>
+      <div class="status-row">
+        <span><span class="status-dot" id="d-ollama"></span>Ollama</span>
+        <span class="status-val" id="s-ollama">—</span>
+      </div>
+      <div class="status-row" style="margin-top:3px;border-top:1px solid var(--border);padding-top:6px;">
+        <span style="color:var(--t3);font-size:10px">Cached Entries</span>
+        <span class="status-val" style="color:var(--purple-l)" id="s-entries">0</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="tb-left">
+        <div>
+          <div class="tb-title">OptiRAG — Intelligent Document AI</div>
+          <div class="tb-sub">Semantic caching · Vector retrieval · Local LLM</div>
+        </div>
+        <div class="model-pill">
+          <span class="status-dot dot-ok"></span>
+          <span id="modelPill">mistral + nomic-embed-text</span>
+        </div>
+      </div>
+      <div class="tb-right">
+        <div class="stat-chip" onclick="switchTab('analytics')" title="Analytics">
+          <span>⚡</span>
+          <span>Hit Rate</span>
+          <span class="chip-val" id="hitRateChip">—</span>
+        </div>
+        <div class="stat-chip" onclick="switchTab('compare')" title="Cost saved">
+          <span>💰</span>
+          <span>Saved</span>
+          <span class="chip-val" id="savedChip">$0.00</span>
+        </div>
+        <button class="tab-btn active" id="tab-chat"       onclick="switchTab('chat')">💬 Chat</button>
+        <button class="tab-btn"        id="tab-analytics"  onclick="switchTab('analytics')">📊 Analytics</button>
+        <button class="tab-btn"        id="tab-compare"    onclick="switchTab('compare')">⚡ Old vs New</button>
+        <button class="tab-btn"        id="tab-howitworks" onclick="switchTab('howitworks')">🔬 How It Works</button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ═══ CHAT PANEL ════════════════════════════════════════════════════ -->
+      <div class="tab-panel active" id="panel-chat">
+        <div class="chat-msgs" id="chatMsgs">
+          <div class="empty-state" id="emptyState">
+            <div class="es-icon">🔍</div>
+            <h2>Ask anything about your documents</h2>
+            <p>Upload PDFs, images or text files — then ask questions in plain English. Semantically similar questions are served <strong>instantly from cache</strong>, skipping the LLM entirely.</p>
+            <div class="suggestions">
+              <div class="suggestion" onclick="setQ('Summarise the key findings')">Summarise the key findings</div>
+              <div class="suggestion" onclick="setQ('What are the main conclusions?')">What are the main conclusions?</div>
+              <div class="suggestion" onclick="setQ('List all recommendations')">List all recommendations</div>
+              <div class="suggestion" onclick="setQ('What is this document about?')">What is this document about?</div>
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area">
+          <div class="input-wrap">
+            <textarea id="chatInput" rows="1" placeholder="Ask a question about your documents…" maxlength="2000"></textarea>
+            <button class="send-btn" id="sendBtn" onclick="sendQuery()">➤</button>
+          </div>
+          <div class="input-hint">Enter to send · Shift+Enter for new line · <span id="qCount">0</span> queries made</div>
+        </div>
+      </div>
+
+      <!-- ═══ ANALYTICS PANEL ═══════════════════════════════════════════════ -->
+      <div class="tab-panel" id="panel-analytics">
+        <div class="an-hdr">
+          <h2>Performance &amp; Cost Analytics</h2>
+          <p>Real-time proof that semantic caching is reducing LLM calls and saving cost.</p>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-grid">
+          <div class="kpi-card grn">
+            <div class="kpi-lbl">LLM Calls Avoided</div>
+            <div class="kpi-val grn" id="m-saved">0</div>
+            <div class="kpi-sub">out of <span id="m-total">0</span> total queries</div>
+            <div class="kpi-icon">🛡️</div>
+          </div>
+          <div class="kpi-card amb">
+            <div class="kpi-lbl">Estimated Cost Saved</div>
+            <div class="kpi-val amb" id="m-cost">$0.00</div>
+            <div class="kpi-sub">@ ~$0.002 per LLM call (GPT-4 scale)</div>
+            <div class="kpi-icon">💰</div>
+          </div>
+          <div class="kpi-card pur">
+            <div class="kpi-lbl">Cache Hit Rate</div>
+            <div class="kpi-val pur" id="m-hitrate">0%</div>
+            <div class="kpi-sub">cosine similarity ≥ 0.92 threshold</div>
+            <div class="kpi-icon">⚡</div>
+          </div>
+          <div class="kpi-card cyn">
+            <div class="kpi-lbl">Latency Saved / Query</div>
+            <div class="kpi-val cyn" id="m-latency">—</div>
+            <div class="kpi-sub">cached queries vs full LLM pipeline</div>
+            <div class="kpi-icon">⏱️</div>
+          </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-row">
+          <!-- Donut -->
+          <div class="chart-card">
+            <div class="chart-title">Query Distribution</div>
+            <div class="chart-sub">Cache hits vs LLM-generated responses</div>
+            <div class="donut-wrap">
+              <svg width="128" height="128" viewBox="0 0 128 128">
+                <circle cx="64" cy="64" r="50" fill="none" stroke="#18213a" stroke-width="17"/>
+                <circle id="donut-miss" cx="64" cy="64" r="50" fill="none" stroke="#8b5cf6" stroke-width="17" stroke-dasharray="314 0" stroke-linecap="round" transform="rotate(-90 64 64)" style="transition:stroke-dasharray 1s ease"/>
+                <circle id="donut-hit"  cx="64" cy="64" r="50" fill="none" stroke="#10b981" stroke-width="17" stroke-dasharray="0 314" stroke-linecap="round" transform="rotate(-90 64 64)" style="transition:stroke-dasharray 1s ease"/>
+                <text x="64" y="59" text-anchor="middle" fill="#f1f5f9" font-size="20" font-weight="800" font-family="Inter" id="donut-pct">0%</text>
+                <text x="64" y="74" text-anchor="middle" fill="#94a3b8" font-size="10" font-family="Inter">hit rate</text>
+              </svg>
+              <div class="donut-legend">
+                <div class="leg-item">
+                  <div class="leg-dot" style="background:var(--green)"></div>
+                  <span>Cache Hits</span>
+                  <span class="leg-val" id="leg-hits" style="color:var(--green)">0</span>
+                </div>
+                <div class="leg-item">
+                  <div class="leg-dot" style="background:var(--purple)"></div>
+                  <span>LLM Generated</span>
+                  <span class="leg-val" id="leg-miss" style="color:var(--purple-l)">0</span>
+                </div>
+                <div class="leg-item" style="margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">
+                  <div class="leg-dot" style="background:var(--t3)"></div>
+                  <span>Total</span>
+                  <span class="leg-val" id="leg-total">0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Latency bars -->
+          <div class="chart-card">
+            <div class="chart-title">Latency Comparison</div>
+            <div class="chart-sub">Average response time across paths</div>
+            <div class="bar-chart">
+              <div class="bar-row">
+                <div class="bar-lbl"><span>⚡ Cache Hit (Redis lookup)</span><span id="bv-cache">~40ms</span></div>
+                <div class="bar-track"><div class="bar-fill" id="bf-cache" style="width:2%;background:var(--gg)"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-lbl"><span>🤖 Full LLM Pipeline</span><span id="bv-llm">~5000ms</span></div>
+                <div class="bar-track"><div class="bar-fill" id="bf-llm" style="width:100%;background:var(--gp)"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-lbl"><span>📊 Your Avg (blended)</span><span id="bv-avg">—</span></div>
+                <div class="bar-track"><div class="bar-fill" id="bf-avg" style="width:0%;background:linear-gradient(90deg,var(--cyan),var(--blue))"></div></div>
+              </div>
+            </div>
+            <div class="speedup-box">
+              <div class="label">Speedup Factor (cache vs LLM)</div>
+              <div class="big" id="speedup-val">—</div>
+              <div class="sub" id="speedup-sub">Make a few queries first</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="hist-card">
+          <div class="chart-title" style="margin-bottom:3px">Query History</div>
+          <div class="chart-sub" style="margin-bottom:12px">Last 20 queries with cache status and latency</div>
+          <div style="overflow-x:auto">
+            <table class="hist-table">
+              <thead>
+                <tr><th>#</th><th>Query</th><th>Status</th><th>Latency</th><th>Model</th><th>Similarity</th></tr>
+              </thead>
+              <tbody id="histBody">
+                <tr><td colspan="6" style="text-align:center;color:var(--t3);padding:20px">No queries yet — ask something above!</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ OLD vs NEW COMPARISON ═════════════════════════════════════════ -->
+      <div class="tab-panel" id="panel-compare">
+        <div class="compare-hero">
+          <h2>⚡ Old Way vs OptiRAG — The Difference Is Staggering</h2>
+          <p>Traditional RAG calls the LLM on <em>every single query</em>. OptiRAG first checks if a semantically similar question was answered before — if yes, the answer comes back in milliseconds at zero cost. Every cache hit is money and time saved.</p>
+        </div>
+
+        <!-- Live counters -->
+        <div class="live-counters">
+          <div class="lc-card red">
+            <div class="lc-icon">🔴</div>
+            <div class="lc-val red" id="lc-old-calls">0</div>
+            <div class="lc-lbl">Old Way: LLM Calls Made</div>
+            <div class="lc-sub">every query = 1 LLM call</div>
+          </div>
+          <div class="lc-card grn">
+            <div class="lc-icon">🟢</div>
+            <div class="lc-val grn" id="lc-new-calls">0</div>
+            <div class="lc-lbl">OptiRAG: LLM Calls Made</div>
+            <div class="lc-sub">cache hits skip the LLM entirely</div>
+          </div>
+          <div class="lc-card pur">
+            <div class="lc-icon">💰</div>
+            <div class="lc-val pur" id="lc-saved-cost">$0.000</div>
+            <div class="lc-lbl">Estimated Money Saved</div>
+            <div class="lc-sub">@ $0.002 per avoided LLM call</div>
+          </div>
+        </div>
+
+        <!-- Side by side -->
+        <div class="vs-grid">
+          <div class="vs-col old">
+            <span class="vs-badge old">❌ Old Approach — No Caching</span>
+            <div class="vs-title">Traditional RAG / Plain LLM</div>
+            <div class="vs-sub">Every user question is embedded, retrieved and sent to the LLM — regardless of whether an identical question was asked 1 second ago.</div>
+            <div class="flow-step bad">
+              <div class="step-icon">📝</div>
+              <div class="step-body">
+                <div class="step-name">User Query</div>
+                <div class="step-detail">Receives question from user</div>
+              </div>
+            </div>
+            <div class="flow-step bad">
+              <div class="step-icon">🧠</div>
+              <div class="step-body">
+                <div class="step-name">Embed Query (Ollama)</div>
+                <div class="step-detail">Convert text → 768-dim vector</div>
+                <div class="step-cost cost-bad">~200ms · always called</div>
+              </div>
+            </div>
+            <div class="flow-step bad">
+              <div class="step-icon">🗄️</div>
+              <div class="step-body">
+                <div class="step-name">Vector Search (ChromaDB)</div>
+                <div class="step-detail">Retrieve top-5 relevant chunks</div>
+                <div class="step-cost cost-bad">~50ms · always called</div>
+              </div>
+            </div>
+            <div class="flow-step bad">
+              <div class="step-icon">🤖</div>
+              <div class="step-body">
+                <div class="step-name">LLM Generation (mistral)</div>
+                <div class="step-detail">Generate answer from context</div>
+                <div class="step-cost cost-bad">3000–8000ms · always called · $0.002+</div>
+              </div>
+            </div>
+            <div class="flow-step bad">
+              <div class="step-icon">📤</div>
+              <div class="step-body">
+                <div class="step-name">Return Answer</div>
+                <div class="step-detail">Total: ~4000–9000ms</div>
+                <div class="step-cost cost-bad">Repeated identical queries = repeated full cost</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="vs-sep"><div class="vs-sep-inner">VS</div></div>
+
+          <div class="vs-col new">
+            <span class="vs-badge new">✅ OptiRAG — Semantic Cache First</span>
+            <div class="vs-title">RAG with Semantic Caching</div>
+            <div class="vs-sub">A fast cache lookup happens first. If a semantically similar question was asked before (cosine similarity ≥ 0.92), the answer is returned <em>instantly from Redis</em>.</div>
+            <div class="flow-step good">
+              <div class="step-icon">📝</div>
+              <div class="step-body">
+                <div class="step-name">User Query</div>
+                <div class="step-detail">Receives question from user</div>
+              </div>
+            </div>
+            <div class="flow-step good">
+              <div class="step-icon">🧠</div>
+              <div class="step-body">
+                <div class="step-name">Embed Query</div>
+                <div class="step-detail">Convert text → vector for similarity check</div>
+                <div class="step-cost cost-good">~200ms</div>
+              </div>
+            </div>
+            <div class="flow-step good" style="border-color:rgba(16,185,129,.4);background:rgba(16,185,129,.08)">
+              <div class="step-icon">⚡</div>
+              <div class="step-body">
+                <div class="step-name">Semantic Cache Lookup (Redis)</div>
+                <div class="step-detail">Check if similarity ≥ 0.92 with any cached query</div>
+                <div class="step-cost cost-good">~5ms lookup · <strong>INSTANT RETURN on HIT ✓</strong></div>
+              </div>
+            </div>
+            <div class="flow-step skip">
+              <div class="step-icon">🗄️</div>
+              <div class="step-body">
+                <div class="step-name">Vector Search — SKIPPED on cache hit</div>
+                <div class="step-detail">Only runs on cache miss</div>
+              </div>
+            </div>
+            <div class="flow-step skip">
+              <div class="step-icon">🤖</div>
+              <div class="step-body">
+                <div class="step-name">LLM Generation — SKIPPED on cache hit</div>
+                <div class="step-detail">Saves 3–8 seconds + $0.002+ per hit</div>
+              </div>
+            </div>
+            <div class="flow-step good">
+              <div class="step-icon">📤</div>
+              <div class="step-body">
+                <div class="step-name">Return Answer</div>
+                <div class="step-detail">Cache hit: &lt;50ms · Cache miss: ~4000ms</div>
+                <div class="step-cost cost-good">Identical/similar repeated queries = FREE</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cost table -->
+        <div class="cost-table-wrap">
+          <div class="chart-title" style="margin-bottom:3px">Cost Breakdown — 1000 Queries (Industry Realistic)</div>
+          <div class="chart-sub" style="margin-bottom:12px">Assumes 60% of queries are semantically similar to previous ones (typical for customer support / knowledge bases)</div>
+          <table class="cost-table">
+            <thead>
+              <tr><th>Scenario</th><th>LLM Calls</th><th>Embed Calls</th><th>Avg Latency</th><th>Total Cost (est.)</th><th>Vs Old Way</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>🔴 Old Way — No Cache</td>
+                <td><span class="cost-num red">1,000</span></td>
+                <td><span class="cost-num red">1,000</span></td>
+                <td><span class="cost-num red">~5,000ms</span></td>
+                <td><span class="cost-num red">$2.00</span></td>
+                <td>—</td>
+              </tr>
+              <tr>
+                <td>✅ OptiRAG — 60% hit rate</td>
+                <td><span class="cost-num grn">400</span></td>
+                <td><span class="cost-num grn">1,000</span></td>
+                <td><span class="cost-num grn">~2,050ms</span></td>
+                <td><span class="cost-num grn">$0.80</span></td>
+                <td><span class="cost-num grn">Saves $1.20 (60%)</span></td>
+              </tr>
+              <tr>
+                <td>🚀 OptiRAG — 80% hit rate</td>
+                <td><span class="cost-num grn">200</span></td>
+                <td><span class="cost-num grn">1,000</span></td>
+                <td><span class="cost-num grn">~1,040ms</span></td>
+                <td><span class="cost-num grn">$0.40</span></td>
+                <td><span class="cost-num grn">Saves $1.60 (80%)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pipeline visualization -->
+        <div class="pipeline-section">
+          <div class="pipe-title">Live Pipeline Flow — What Happens on Each Query</div>
+          <div class="pipe-sub">Watch how a cache hit short-circuits the expensive steps</div>
+          <div class="pipeline" id="pipelineViz">
+            <div class="pipe-node">
+              <div class="pipe-circle c-blue active" id="pn-query">📝</div>
+              <div class="pipe-lbl">Query</div>
+              <div class="pipe-detail">User input</div>
+            </div>
+            <div class="pipe-arrow" id="pa-1">→</div>
+            <div class="pipe-node">
+              <div class="pipe-circle c-purple" id="pn-embed">🧠</div>
+              <div class="pipe-lbl">Embed</div>
+              <div class="pipe-detail">Ollama</div>
+            </div>
+            <div class="pipe-arrow" id="pa-2">→</div>
+            <div class="pipe-node">
+              <div class="pipe-circle c-cyan" id="pn-cache">⚡</div>
+              <div class="pipe-lbl">Cache Check</div>
+              <div class="pipe-detail">Redis</div>
+            </div>
+            <div class="pipe-arrow" id="pa-3">→</div>
+            <div class="pipe-node" id="pn-hit-branch">
+              <div class="pipe-circle c-green" id="pn-hit">✅</div>
+              <div class="pipe-lbl">Cache HIT</div>
+              <div class="pipe-detail">Instant reply</div>
+            </div>
+            <div class="pipe-arrow pipe-arrow" id="pa-miss" style="opacity:.3">→</div>
+            <div class="pipe-node" style="opacity:.3">
+              <div class="pipe-circle c-amber" id="pn-retrieve">🗄️</div>
+              <div class="pipe-lbl">Retrieve</div>
+              <div class="pipe-detail">ChromaDB</div>
+            </div>
+            <div class="pipe-arrow" style="opacity:.3">→</div>
+            <div class="pipe-node" style="opacity:.3">
+              <div class="pipe-circle c-red" id="pn-llm">🤖</div>
+              <div class="pipe-lbl">LLM</div>
+              <div class="pipe-detail">mistral</div>
+            </div>
+            <div class="pipe-arrow" style="opacity:.3">→</div>
+            <div class="pipe-node" style="opacity:.3">
+              <div class="pipe-circle c-green">📤</div>
+              <div class="pipe-lbl">Answer</div>
+              <div class="pipe-detail">miss path</div>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:12px;text-align:center">Green path = cache HIT (fast) · Dimmed path = cache MISS (full pipeline)</div>
+        </div>
+      </div>
+
+      <!-- ═══ HOW IT WORKS ════════════════════════════════════════════════════ -->
+      <div class="tab-panel" id="panel-howitworks">
+        <div class="hiw-hero">
+          <h2>🔬 How OptiRAG Works — Plain English</h2>
+          <p>OptiRAG is a <strong>Retrieval-Augmented Generation (RAG)</strong> system with a twist: instead of calling the LLM for every question, it first checks if a <em>semantically similar</em> question was already answered. If yes — the cached answer comes back in milliseconds. If no — it retrieves relevant chunks from your documents and asks the LLM to generate a grounded answer, then caches that for next time.</p>
+        </div>
+
+        <!-- 6 cards -->
+        <div class="hiw-grid">
+          <div class="hiw-card p1">
+            <div class="hiw-num">Step 01</div>
+            <div class="hiw-icon">📂</div>
+            <div class="hiw-title">Document Ingestion</div>
+            <div class="hiw-desc">You upload a PDF, image, DOCX or text file. The system extracts all text (and any images), splits it into overlapping chunks of ~512 tokens, embeds each chunk into a dense vector using Ollama, and stores everything in ChromaDB — a local vector database.</div>
+            <div class="hiw-tech">
+              <span class="tech-tag">PyMuPDF</span><span class="tech-tag">python-docx</span><span class="tech-tag">ChromaDB</span><span class="tech-tag">Ollama embed</span>
+            </div>
+          </div>
+
+          <div class="hiw-card p2">
+            <div class="hiw-num">Step 02</div>
+            <div class="hiw-icon">❓</div>
+            <div class="hiw-title">Query Comes In</div>
+            <div class="hiw-desc">When you ask a question, the API accepts it and places it into an internal async queue. A background worker picks it up and starts the RAG pipeline.</div>
+            <div class="hiw-tech">
+              <span class="tech-tag">FastAPI</span><span class="tech-tag">asyncio.Queue</span><span class="tech-tag">Pydantic</span>
+            </div>
+          </div>
+
+          <div class="hiw-card p3">
+            <div class="hiw-num">Step 03</div>
+            <div class="hiw-icon">⚡</div>
+            <div class="hiw-title">Semantic Cache Check</div>
+            <div class="hiw-desc">The query is embedded into a vector. All previously cached query-answer pairs are retrieved from Redis. Cosine similarity is computed between your query and each cached entry. If the best match ≥ 0.92 similarity — it's a <strong>cache hit</strong> and the answer is returned instantly, skipping all LLM calls.</div>
+            <div class="hiw-tech">
+              <span class="tech-tag">Redis</span><span class="tech-tag">cosine similarity</span><span class="tech-tag">NumPy</span>
+            </div>
+          </div>
+
+          <div class="hiw-card p4">
+            <div class="hiw-num">Step 04</div>
+            <div class="hiw-icon">🗄️</div>
+            <div class="hiw-title">Vector Retrieval (on miss)</div>
+            <div class="hiw-desc">On a cache miss, the query embedding is used to find the top-5 most relevant document chunks from ChromaDB using approximate nearest-neighbour search. These chunks become the context for the LLM.</div>
+            <div class="hiw-tech">
+              <span class="tech-tag">ChromaDB</span><span class="tech-tag">HNSW index</span><span class="tech-tag">cosine space</span>
+            </div>
+          </div>
+
+          <div class="hiw-card p5">
+            <div class="hiw-num">Step 05</div>
+            <div class="hiw-icon">🤖</div>
+            <div class="hiw-title">LLM Generation (on miss)</div>
+            <div class="hiw-desc">The retrieved chunks are assembled into a prompt alongside your question and sent to Ollama running the <strong>mistral</strong> model locally. Mistral generates a grounded answer. If images are involved, <strong>llava</strong> (vision model) is used instead.</div>
+            <div class="hiw-tech">
+              <span class="tech-tag">Ollama</span><span class="tech-tag">mistral</span><span class="tech-tag">llava</span><span class="tech-tag">httpx</span>
+            </div>
+          </div>
+
+          <div class="hiw-card p6">
+            <div class="hiw-num">Step 06</div>
+            <div class="hiw-icon">💾</div>
+            <div class="hiw-title">Cache &amp; Return</div>
+            <div class="hiw-desc">The answer is stored back in Redis with its query embedding and a 24-hour TTL. Future semantically similar queries will now get a cache hit. The answer is returned to the API caller with full metadata: latency, model, sources, cache status.</div>
+            <div class="hiw-tech">
+              <span class="tech-tag">Redis HASH</span><span class="tech-tag">Redis ZSET</span><span class="tech-tag">TTL=24h</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Definitions -->
+        <div class="def-grid">
+          <div class="def-card">
+            <div class="def-title">🔤 What is RAG?</div>
+            <div class="def-body"><strong>Retrieval-Augmented Generation</strong> is a technique where instead of asking the LLM to answer from its training data alone, you first <em>retrieve</em> relevant passages from your own documents and include them in the prompt. The LLM then generates an answer <strong>grounded in your actual content</strong> — reducing hallucinations and making answers verifiable.</div>
+          </div>
+          <div class="def-card">
+            <div class="def-title">⚡ What is Semantic Caching?</div>
+            <div class="def-body"><strong>Semantic caching</strong> goes beyond exact-match caching. Instead of caching <em>"What is the revenue?"</em> and only matching that exact string, it caches the meaning. So <em>"What was the total revenue?"</em> or <em>"How much money did we make?"</em> all get the same cached answer — because their <strong>vector embeddings are similar enough</strong> (cosine similarity ≥ 0.92).</div>
+          </div>
+          <div class="def-card">
+            <div class="def-title">🧠 What is an Embedding?</div>
+            <div class="def-body">An <strong>embedding</strong> is a list of ~768 numbers that represent the <em>meaning</em> of a piece of text. The <code>nomic-embed-text</code> model (via Ollama) converts any text into this vector. Texts with similar meaning have vectors that are close together — enabling similarity search and semantic caching. <strong>It's like coordinates in meaning-space.</strong></div>
+          </div>
+          <div class="def-card">
+            <div class="def-title">📐 What is Cosine Similarity?</div>
+            <div class="def-body"><strong>Cosine similarity</strong> measures the angle between two vectors. A score of 1.0 means identical meaning, 0.0 means unrelated. OptiRAG uses a threshold of <strong>0.92</strong> — meaning two questions must be 92% semantically similar to count as a cache hit. This is tight enough to avoid wrong answers but flexible enough to catch paraphrases.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </main>
+</div><!-- /app -->
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+  const API = 'http://localhost:8000/api/v1';
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let queryCount = 0;
+  let queryHistory = [];
+  let totalLatencyLLM  = 0; let countLLM  = 0;
+  let totalLatencyCache = 0; let countCache = 0;
+  let docs = [];
+  let totalQueriesOldWay = 0; // every query = 1 LLM call in old way
+  let totalQueriesNewWay = 0; // only misses = 1 LLM call
+
+  // ── Tab switching ────────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'analytics' || name === 'compare') refreshStats();
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────────
+  function toast(msg, type='info') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'show ' + type;
+    setTimeout(() => t.className = '', 3200);
+  }
+
+  // ── File upload / ingest ────────────────────────────────────────────────
+  document.getElementById('fileInput').addEventListener('change', e => { handleFiles(e.target.files); });
+  document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('dropOverlay').classList.add('active'); });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('dropOverlay').classList.remove('active'); });
+  document.addEventListener('drop', e => { e.preventDefault(); document.getElementById('dropOverlay').classList.remove('active'); handleFiles(e.dataTransfer.files); });
+
+  async function handleFiles(files) {
+    for (const file of files) {
+      await ingestFile(file);
+    }
+    refreshStats();
+  }
+
+  async function ingestFile(file) {
+    const prog = document.getElementById('ingestProg');
+    const fill = document.getElementById('progFill');
+    const lbl  = document.getElementById('progLbl');
+    prog.classList.add('show');
+    lbl.textContent = `Uploading ${file.name}…`;
+    fill.style.width = '20%';
+
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      fill.style.width = '60%';
+      lbl.textContent = `Indexing ${file.name}…`;
+      const r = await fetch(`${API}/ingest`, { method:'POST', body:fd });
+      fill.style.width = '100%';
+      if (r.ok) {
+        const d = await r.json();
+        toast(`✅ ${d.filename} — ${d.chunks_indexed} chunks indexed`, 'success');
+        addDoc(file, d.chunks_indexed);
+      } else {
+        const err = await r.json();
+        toast(`❌ ${err.detail || 'Ingest failed'}`, 'error');
+      }
+    } catch(e) {
+      toast('❌ Cannot reach server — is uvicorn running?', 'error');
+    }
+    setTimeout(() => { prog.classList.remove('show'); fill.style.width='0%'; }, 1200);
+  }
+
+  function addDoc(file, chunks) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const iconMap = { pdf:'📄', png:'🖼️', jpg:'🖼️', jpeg:'🖼️', webp:'🖼️', txt:'📝', md:'📝', docx:'📋' };
+    const icon = iconMap[ext] || '📄';
+    docs.push({ name:file.name, chunks, icon, ext });
+    renderDocs();
+  }
+
+  function renderDocs() {
+    const list = document.getElementById('docList');
+    const nd = document.getElementById('noDocs');
+    if (docs.length === 0) { nd.style.display = ''; return; }
+    nd.style.display = 'none';
+    list.innerHTML = docs.map(d => `
+      <div class="doc-item">
+        <div class="doc-icon ${d.ext}">${d.icon}</div>
+        <div class="doc-info">
+          <div class="doc-name">${d.name}</div>
+          <div class="doc-meta">${d.chunks} chunks indexed</div>
+        </div>
+      </div>`).join('') + (nd.outerHTML);
+    document.getElementById('noDocs').style.display = 'none';
+  }
+
+  // ── Chat ─────────────────────────────────────────────────────────────────
+  const chatInput = document.getElementById('chatInput');
+  chatInput.addEventListener('input', () => {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+  });
+  chatInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+  });
+
+  function setQ(q) { chatInput.value = q; chatInput.focus(); }
+
+  async function sendQuery() {
+    const q = chatInput.value.trim();
+    if (!q) return;
+    chatInput.value = '';
+    chatInput.style.height = '';
+    document.getElementById('sendBtn').disabled = true;
+
+    // Hide empty state
+    const es = document.getElementById('emptyState');
+    if (es) es.style.display = 'none';
+
+    // User message
+    appendMsg('user', q);
+
+    // Typing indicator
+    const typingId = 'typing-' + Date.now();
+    appendTyping(typingId);
+
+    queryCount++;
+    totalQueriesOldWay++;  // old way always calls LLM
+    document.getElementById('qCount').textContent = queryCount;
+
+    const t0 = Date.now();
+    try {
+      const r = await fetch(`${API}/query`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ query:q, multimodal:true })
+      });
+      const latency = Date.now() - t0;
+      removeTyping(typingId);
+
+      if (r.ok) {
+        const d = await r.json();
+        const effectiveLat = d.latency_ms || latency;
+
+        if (d.cache_hit) {
+          countCache++;
+          totalLatencyCache += effectiveLat;
+          // new way: cache hit = 0 LLM calls for this query
+        } else {
+          countLLM++;
+          totalQueriesNewWay++;  // new way: LLM called on miss
+          totalLatencyLLM += effectiveLat;
+        }
+
+        appendAIMsg(d, effectiveLat);
+        addHistory(q, d, effectiveLat);
+        updateChips();
+        animatePipeline(d.cache_hit);
+      } else {
+        const err = await r.json();
+        appendAIMsg({ answer: `Error: ${err.detail}`, cache_hit:false, model:'error', sources:[] }, latency);
+      }
+    } catch(e) {
+      removeTyping(typingId);
+      appendAIMsg({ answer: '⚠️ Cannot reach the server. Make sure uvicorn is running on port 8000.', cache_hit:false, model:'error', sources:[] }, 0);
+    }
+    document.getElementById('sendBtn').disabled = false;
+  }
+
+  function appendMsg(role, text) {
+    const wrap = document.getElementById('chatMsgs');
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    div.innerHTML = `
+      <div class="msg-av">${role === 'user' ? '👤' : '⚡'}</div>
+      <div class="msg-body">
+        <div class="msg-bubble">${escHtml(text)}</div>
+      </div>`;
+    wrap.appendChild(div);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function appendAIMsg(d, latency) {
+    const wrap = document.getElementById('chatMsgs');
+    const isDemo = d.model && d.model.includes('mock');
+    const statusBadge = d.cache_hit
+      ? `<span class="badge b-cache">⚡ CACHE HIT</span>`
+      : isDemo
+        ? `<span class="badge b-demo">🔵 DEMO MODE</span>`
+        : `<span class="badge b-llm">🤖 LLM Generated</span>`;
+    const latBadge = `<span class="badge b-lat">⏱ ${latency.toFixed ? latency.toFixed(0) : latency}ms</span>`;
+    const srcBadge = d.sources && d.sources.length
+      ? `<span class="badge b-src">📎 ${d.sources.length} source${d.sources.length>1?'s':''}</span>` : '';
+    const srcBlock = d.sources && d.sources.length
+      ? `<div class="sources-block"><div class="src-lbl">Sources</div>${d.sources.map(s=>`<span class="src-tag">📄 ${s}</span>`).join('')}</div>` : '';
+    const simBadge = d.similarity
+      ? `<span class="badge b-cache">sim ${(d.similarity*100).toFixed(1)}%</span>` : '';
+
+    const div = document.createElement('div');
+    div.className = 'msg ai';
+    div.innerHTML = `
+      <div class="msg-av">⚡</div>
+      <div class="msg-body">
+        <div class="msg-bubble">${escHtml(d.answer)}
+          <div class="msg-meta">${statusBadge}${latBadge}${srcBadge}${simBadge}</div>
+          ${srcBlock}
+        </div>
+      </div>`;
+    wrap.appendChild(div);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function appendTyping(id) {
+    const wrap = document.getElementById('chatMsgs');
+    const div = document.createElement('div');
+    div.className = 'msg ai'; div.id = id;
+    div.innerHTML = `<div class="msg-av">⚡</div><div class="msg-body"><div class="msg-bubble"><div class="typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div></div>`;
+    wrap.appendChild(div);
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+  function removeTyping(id) { const el = document.getElementById(id); if(el) el.remove(); }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  }
+
+  // ── Analytics refresh ────────────────────────────────────────────────────
+  async function refreshStats() {
+    try {
+      const [hRes, sRes] = await Promise.all([
+        fetch(`${API}/health`), fetch(`${API}/cache/stats`)
+      ]);
+      if (hRes.ok) {
+        const h = await hRes.json();
+        updateServiceStatus(h);
+        document.getElementById('s-chroma').textContent = `${h.vector_store_docs} docs`;
+      }
+      if (sRes.ok) {
+        const s = await sRes.json();
+        updateAnalytics(s);
+      }
+    } catch(e) {}
+  }
+
+  function updateServiceStatus(h) {
+    const svc = h.services || {};
+    // Redis
+    const rd = document.getElementById('d-redis');
+    const rs = document.getElementById('s-redis');
+    if (svc.redis === 'ok') { rd.className='status-dot dot-ok'; rs.className='status-val status-ok'; rs.textContent='running'; }
+    else { rd.className='status-dot dot-err'; rs.className='status-val status-err'; rs.textContent='error'; }
+    // Ollama
+    const od = document.getElementById('d-ollama');
+    const os = document.getElementById('s-ollama');
+    if (svc.ollama === 'ok') { od.className='status-dot dot-ok'; os.className='status-val status-ok'; os.textContent='running'; }
+    else { od.className='status-dot dot-err'; os.className='status-val status-err'; os.textContent='offline (demo mode)'; }
+  }
+
+  function updateAnalytics(s) {
+    const hits   = s.hits   || 0;
+    const misses = s.misses || 0;
+    const total  = s.total_lookups || (hits + misses);
+    const hitPct = total > 0 ? (hits/total*100).toFixed(1) : 0;
+    const costSaved = (hits * 0.002).toFixed(3);
+    const entries = s.entry_count || 0;
+
+    // KPIs
+    document.getElementById('m-saved').textContent   = hits;
+    document.getElementById('m-total').textContent   = total;
+    document.getElementById('m-cost').textContent    = '$' + costSaved;
+    document.getElementById('m-hitrate').textContent = hitPct + '%';
+
+    // Latency
+    const avgLLM   = countLLM   > 0 ? Math.round(totalLatencyLLM   / countLLM)   : 5000;
+    const avgCache = countCache > 0 ? Math.round(totalLatencyCache / countCache) : 40;
+    const latSaved = avgLLM - avgCache;
+    document.getElementById('m-latency').textContent = latSaved > 0 ? latSaved + 'ms' : '—';
+
+    // Bar chart
+    const maxLat = Math.max(avgLLM, 5000);
+    document.getElementById('bv-cache').textContent = avgCache + 'ms';
+    document.getElementById('bv-llm').textContent   = avgLLM + 'ms';
+    document.getElementById('bf-cache').style.width = Math.max(2, (avgCache/maxLat*100)) + '%';
+    document.getElementById('bf-llm').style.width   = '100%';
+    if (total > 0) {
+      const blended = (hits*avgCache + misses*avgLLM) / total;
+      document.getElementById('bv-avg').textContent = Math.round(blended) + 'ms';
+      document.getElementById('bf-avg').style.width = (blended/maxLat*100) + '%';
+    }
+    const sf = avgLLM > 0 && avgCache > 0 ? (avgLLM/avgCache).toFixed(1) : '—';
+    document.getElementById('speedup-val').textContent = sf !== '—' ? sf + 'x' : '—';
+    document.getElementById('speedup-sub').textContent = sf !== '—'
+      ? `Cache hits are ~${sf}x faster than LLM generation`
+      : 'Make queries with cache hits to see speedup';
+
+    // Donut
+    const C = 314;
+    const hitArc  = total > 0 ? C * hits/total   : 0;
+    const missArc = total > 0 ? C * misses/total  : C;
+    document.getElementById('donut-hit').setAttribute('stroke-dasharray',  `${hitArc} ${C-hitArc}`);
+    document.getElementById('donut-hit').setAttribute('stroke-dashoffset', `${-(C-missArc)}`);
+    document.getElementById('donut-miss').setAttribute('stroke-dasharray', `${missArc} ${C-missArc}`);
+    document.getElementById('donut-pct').textContent = hitPct + '%';
+    document.getElementById('leg-hits').textContent  = hits;
+    document.getElementById('leg-miss').textContent  = misses;
+    document.getElementById('leg-total').textContent = total;
+
+    // Chips in topbar
+    document.getElementById('hitRateChip').textContent = hitPct + '%';
+    document.getElementById('savedChip').textContent   = '$' + costSaved;
+
+    // Sidebar status
+    document.getElementById('s-entries').textContent = entries;
+
+    // Compare panel counters
+    document.getElementById('lc-old-calls').textContent  = total; // old = every query is LLM call
+    document.getElementById('lc-new-calls').textContent  = misses;
+    document.getElementById('lc-saved-cost').textContent = '$' + costSaved;
+  }
+
+  function updateChips() { refreshStats(); }
+
+  // ── History table ─────────────────────────────────────────────────────────
+  function addHistory(q, d, latency) {
+    queryHistory.unshift({ q, d, latency });
+    if (queryHistory.length > 20) queryHistory.pop();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const tb = document.getElementById('histBody');
+    if (queryHistory.length === 0) {
+      tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--t3);padding:20px">No queries yet</td></tr>`;
+      return;
+    }
+    tb.innerHTML = queryHistory.map((item, i) => {
+      const {q, d, latency} = item;
+      const isDemo = d.model && d.model.includes('mock');
+      const pill = d.cache_hit
+        ? `<span class="pill-hit">⚡ Cache HIT</span>`
+        : isDemo
+          ? `<span class="pill-demo">🔵 Demo</span>`
+          : `<span class="pill-miss">🤖 LLM</span>`;
+      const sim = d.similarity ? (d.similarity*100).toFixed(1)+'%' : '—';
+      return `<tr>
+        <td style="color:var(--t3)">${queryHistory.length - i}</td>
+        <td><div class="q-text" title="${escHtml(q)}">${escHtml(q)}</div></td>
+        <td>${pill}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${Math.round(latency)}ms</td>
+        <td style="color:var(--t3);font-size:11px">${d.model || '—'}</td>
+        <td style="color:var(--t3)">${sim}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Pipeline animation ────────────────────────────────────────────────────
+  function animatePipeline(cacheHit) {
+    const nodes = ['pn-query','pn-embed','pn-cache','pn-hit'];
+    const missNodes = document.querySelectorAll('#panel-compare .pipe-node:nth-child(n+9)');
+    if (cacheHit) {
+      // Green path: highlight up to cache hit
+      nodes.forEach((id,i) => {
+        setTimeout(() => {
+          document.getElementById(id).classList.add('active');
+        }, i * 300);
+      });
+    } else {
+      // All nodes light up
+      document.querySelectorAll('.pipe-circle').forEach((c,i) => {
+        setTimeout(() => c.classList.add('active'), i * 250);
+      });
+    }
+    // Reset after animation
+    setTimeout(() => {
+      document.querySelectorAll('.pipe-circle').forEach(c => c.classList.remove('active'));
+    }, 3500);
+  }
+
+  // ── Startup ───────────────────────────────────────────────────────────────
+  refreshStats();
+  setInterval(refreshStats, 10000);
+</script>
+</body>
+</html>

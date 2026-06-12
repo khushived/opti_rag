@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  # ─── Redis ───────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: opti_rag_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Ollama ───────────────────────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: opti_rag_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Pull required models on first boot
+    entrypoint: >
+      /bin/sh -c "
+        ollama serve &
+        sleep 5 &&
+        ollama pull nomic-embed-text &&
+        ollama pull llava &&
+        ollama pull mistral &&
+        wait
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
+
+volumes:
+  redis_data:
+  ollama_data:
+
+networks:
+  default:
+    name: opti_rag_net
