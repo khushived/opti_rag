@@ -79,7 +79,12 @@ class SemanticCache:
             Dict with ``answer``, ``cached_query``, ``similarity``, and
             ``entry_id`` if a hit is found; ``None`` otherwise.
         """
-        query_embedding = await embed_text_async(query)
+        try:
+            query_embedding = await embed_text_async(query)
+        except Exception as exc:
+            logger.warning("Failed to embed query for cache lookup", error=str(exc))
+            return None
+
         entry_ids = await self._get_all_entry_ids()
 
         if not entry_ids:
@@ -89,11 +94,15 @@ class SemanticCache:
         best_similarity = -1.0
         best_entry: Optional[dict] = None
 
-        # Fetch all embeddings in a pipeline to reduce round-trips
-        pipe = self._redis.pipeline(transaction=False)
-        for eid in entry_ids:
-            pipe.hgetall(f"{self._prefix}{eid}")
-        results = await pipe.execute()
+        try:
+            # Fetch all embeddings in a pipeline to reduce round-trips
+            pipe = self._redis.pipeline(transaction=False)
+            for eid in entry_ids:
+                pipe.hgetall(f"{self._prefix}{eid}")
+            results = await pipe.execute()
+        except Exception as exc:
+            logger.warning("Redis pipeline execution failed during lookup", error=str(exc))
+            return None
 
         for eid, raw in zip(entry_ids, results):
             if not raw:
@@ -145,7 +154,11 @@ class SemanticCache:
             The new entry ID.
         """
         if embedding is None:
-            embedding = await embed_text_async(query)
+            try:
+                embedding = await embed_text_async(query)
+            except Exception as exc:
+                logger.warning("Failed to embed query for cache store", error=str(exc))
+                return ""
 
         entry_id = hashlib.sha256(query.encode()).hexdigest()[:16]
 
@@ -156,73 +169,104 @@ class SemanticCache:
             "timestamp": str(time.time()),
         }
 
-        pipe = self._redis.pipeline(transaction=True)
-        pipe.hset(f"{self._prefix}{entry_id}", mapping=payload)
-        pipe.expire(f"{self._prefix}{entry_id}", self._ttl)
-        pipe.zadd(self._index_key, {entry_id: time.time()})
-        await pipe.execute()
+        try:
+            pipe = self._redis.pipeline(transaction=True)
+            pipe.hset(f"{self._prefix}{entry_id}", mapping=payload)
+            pipe.expire(f"{self._prefix}{entry_id}", self._ttl)
+            pipe.zadd(self._index_key, {entry_id: time.time()})
+            await pipe.execute()
 
-        # Trim index to max_entries (remove oldest)
-        count = await self._redis.zcard(self._index_key)
-        if count > self._max_entries:
-            oldest_ids = await self._redis.zrange(
-                self._index_key, 0, count - self._max_entries - 1
-            )
-            if oldest_ids:
-                pipe = self._redis.pipeline(transaction=True)
-                for oid in oldest_ids:
-                    pipe.delete(f"{self._prefix}{oid.decode()}")
-                pipe.zrem(self._index_key, *oldest_ids)
-                await pipe.execute()
+            # Trim index to max_entries (remove oldest)
+            count = await self._redis.zcard(self._index_key)
+            if count > self._max_entries:
+                oldest_ids = await self._redis.zrange(
+                    self._index_key, 0, count - self._max_entries - 1
+                )
+                if oldest_ids:
+                    pipe = self._redis.pipeline(transaction=True)
+                    for oid in oldest_ids:
+                        pipe.delete(f"{self._prefix}{oid.decode()}")
+                    pipe.zrem(self._index_key, *oldest_ids)
+                    await pipe.execute()
 
-        logger.debug("Cache STORE", entry_id=entry_id, query_preview=query[:60])
+            logger.debug("Cache STORE", entry_id=entry_id, query_preview=query[:60])
+        except Exception as exc:
+            logger.warning("Redis cache store operation failed", error=str(exc))
+
         return entry_id
 
     async def invalidate(self, entry_id: str) -> bool:
         """Delete a specific cache entry by ID."""
-        deleted = await self._redis.delete(f"{self._prefix}{entry_id}")
-        await self._redis.zrem(self._index_key, entry_id)
-        return deleted > 0
+        try:
+            deleted = await self._redis.delete(f"{self._prefix}{entry_id}")
+            await self._redis.zrem(self._index_key, entry_id)
+            return deleted > 0
+        except Exception as exc:
+            logger.warning("Redis invalidate failed", entry_id=entry_id, error=str(exc))
+            return False
 
     async def flush(self) -> int:
         """Clear all cache entries. Returns number of keys deleted."""
-        entry_ids = await self._get_all_entry_ids()
-        if not entry_ids:
-            return 0
+        try:
+            entry_ids = await self._get_all_entry_ids()
+            if not entry_ids:
+                return 0
 
-        pipe = self._redis.pipeline(transaction=True)
-        for eid in entry_ids:
-            pipe.delete(f"{self._prefix}{eid}")
-        pipe.delete(self._index_key)
-        pipe.delete(self._stats_key)
-        results = await pipe.execute()
-        deleted = sum(1 for r in results[:-2] if r)
-        logger.info("Cache flushed", deleted=deleted)
-        return deleted
+            pipe = self._redis.pipeline(transaction=True)
+            for eid in entry_ids:
+                pipe.delete(f"{self._prefix}{eid}")
+            pipe.delete(self._index_key)
+            pipe.delete(self._stats_key)
+            results = await pipe.execute()
+            deleted = sum(1 for r in results[:-2] if r)
+            logger.info("Cache flushed", deleted=deleted)
+            return deleted
+        except Exception as exc:
+            logger.warning("Redis flush failed", error=str(exc))
+            return 0
 
     async def get_stats(self) -> dict:
         """Return cache hit/miss statistics."""
-        raw = await self._redis.hgetall(self._stats_key)
-        hits = int(raw.get(b"hits", 0))
-        misses = int(raw.get(b"misses", 0))
-        total = hits + misses
-        entry_count = await self._redis.zcard(self._index_key)
-        return {
-            "hits": hits,
-            "misses": misses,
-            "total_lookups": total,
-            "hit_rate": f"{hits / total * 100:.1f}%" if total > 0 else "n/a",
-            "entry_count": entry_count,
-            "threshold": self._threshold,
-            "ttl_seconds": self._ttl,
-        }
+        try:
+            raw = await self._redis.hgetall(self._stats_key)
+            hits = int(raw.get(b"hits", 0))
+            misses = int(raw.get(b"misses", 0))
+            total = hits + misses
+            entry_count = await self._redis.zcard(self._index_key)
+            return {
+                "hits": hits,
+                "misses": misses,
+                "total_lookups": total,
+                "hit_rate": f"{hits / total * 100:.1f}%" if total > 0 else "n/a",
+                "entry_count": entry_count,
+                "threshold": self._threshold,
+                "ttl_seconds": self._ttl,
+            }
+        except Exception as exc:
+            logger.warning("Failed to fetch Redis cache stats", error=str(exc))
+            return {
+                "hits": 0,
+                "misses": 0,
+                "total_lookups": 0,
+                "hit_rate": "n/a",
+                "entry_count": 0,
+                "threshold": self._threshold,
+                "ttl_seconds": self._ttl,
+            }
 
     # ─── Internals ────────────────────────────────────────────────────────────
 
     async def _get_all_entry_ids(self) -> list[str]:
         """Return all entry IDs from the sorted set index."""
-        raw_ids = await self._redis.zrange(self._index_key, 0, -1)
-        return [eid.decode("utf-8") for eid in raw_ids]
+        try:
+            raw_ids = await self._redis.zrange(self._index_key, 0, -1)
+            return [eid.decode("utf-8") for eid in raw_ids]
+        except Exception as exc:
+            logger.warning("Failed to retrieve entry IDs from Redis", error=str(exc))
+            return []
 
     async def _increment_stat(self, field: str) -> None:
-        await self._redis.hincrby(self._stats_key, field, 1)
+        try:
+            await self._redis.hincrby(self._stats_key, field, 1)
+        except Exception as exc:
+            logger.warning("Redis increment_stat failed", field=field, error=str(exc))
